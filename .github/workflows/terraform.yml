@@ -13,25 +13,20 @@ jobs:
     name: 'Terraform'
     runs-on: ubuntu-latest
 
-    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
-    # Set the working directory to main for the config files
     defaults:
       run:
         shell: bash
         working-directory: ./main
 
     steps:
-    # Checkout the repository to the GitHub Actions runner
     - name: Checkout
       uses: actions/checkout@v2
 
-    # Install the preferred version of Terraform CLI 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v1
       with:
         terraform_version: 1.0.10
 
-    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
     - name: Terraform Init
       id: init
       env:
@@ -44,8 +39,6 @@ jobs:
         CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
       run: terraform init -backend-config="storage_account_name=$STORAGE_ACCOUNT" -backend-config="container_name=$CONTAINER_NAME" -backend-config="resource_group_name=$RESOURCE_GROUP"
 
-
-    # Run a terraform plan for pull requests only
     - name: Terraform Plan
       id: plan
       env:
@@ -54,12 +47,20 @@ jobs:
         ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
         ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
       run: terraform plan -no-color
-        
-      # On push to main, build or change infrastructure according to Terraform configuration files
+
+    - name: Check for 'delete' tag in commit
+      id: check_tag
+      run: echo "::set-output name=delete::$(if git log -1 --pretty=%B | grep -q 'delete'; then echo 'true'; else echo 'false'; fi)"
+
     - name: Terraform Apply
       env:
         ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
         ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
         ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
         ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-      run: terraform apply -auto-approve
+      run: |
+        if [[ "${{ steps.check_tag.outputs.delete }}" == "true" ]]; then
+          terraform destroy -auto-approve
+        else
+          terraform apply -auto-approve
+        fi
